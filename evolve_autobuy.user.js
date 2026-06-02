@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve Idle Auto-Buy Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.13.0
+// @version      1.14.0
 // @description  Automatically buys market items in Evolve Idle based on price, stock, funds, and build queue needs.
 // @author       Antigravity
 // @match        https://pmotschmann.github.io/Evolve/*
@@ -9,6 +9,8 @@
 // @match        http://localhost:*/*
 // @grant        none
 // @run-at       document-start
+// @updateURL    https://raw.githubusercontent.com/xtrapwr/Evolve-user-script/main/evolve_autobuy.user.js
+// @downloadURL  https://raw.githubusercontent.com/xtrapwr/Evolve-user-script/main/evolve_autobuy.user.js
 // ==/UserScript==
 
 (function() {
@@ -2497,7 +2499,7 @@
                     <div style="display: inline-flex; align-items: center; gap: 6px;">
                         <span id="autobuy-settings-toggle-btn" style="cursor: pointer; font-size: 0.85rem; user-select: none; transition: transform 0.2s; transform: rotate(0deg); display: inline-block;">▶</span>
                         <h3 class="title is-5" style="margin: 0; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;" id="autobuy-title-clickable">
-                            Auto-Buy Automation <span style="font-size: 0.75rem; color: #888; font-weight: normal;">v1.13.0</span>
+                            Auto-Buy Automation <span style="font-size: 0.75rem; color: #888; font-weight: normal;">v1.14.0</span>
                         </h3>
                     </div>
                     <div style="display: inline-flex; align-items: center; gap: 12px;">
