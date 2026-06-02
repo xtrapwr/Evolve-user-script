@@ -1,0 +1,18 @@
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Local developer notes (not to be published to public repo)
+GEMINI.md
+project_cheat_sheet.md
+task.md
+implementation_plan.md
+walkthrough.md
+
+# Log files
+*.log
