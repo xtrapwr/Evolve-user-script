@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      0.4.2
+// @version      0.5.0
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -448,16 +448,21 @@
     }
 
     function performAutoJobs() {
+        if (!window.evolve || !window.evolve.global) return;
         const global = window.evolve.global;
-        const unemployed = global.civic.unemployed;
-        if (unemployed <= 0) return;
+        const defaultJob = global.civic.d_job || 'unemployed';
+        const unemployedCount = global.civic[defaultJob]?.workers || 0;
+        if (unemployedCount <= 0) return;
 
         // Prevent Starvation
         const foodRate = global.resource.Food?.rate || 0;
-        if (foodRate <= 2 && global.civic.farmer.display) {
-            const addBtn = document.querySelector('#civ-farmer .add');
-            if (addBtn) {
-                addBtn.click();
+        if (foodRate <= 2 && global.civic.farmer && global.civic.farmer.display) {
+            const farmerMax = global.civic.farmer.max !== undefined ? global.civic.farmer.max : -1;
+            if (farmerMax === -1 || global.civic.farmer.workers < farmerMax) {
+                global.civic.farmer.workers++;
+                global.civic[defaultJob].workers--;
+                global.civic.farmer.assigned = global.civic.farmer.workers;
+                console.log(`[MAD Companion] Auto-assigned worker to farmer to prevent starvation.`);
                 return;
             }
         }
@@ -485,42 +490,53 @@
             const share = totalWorkers > 0 ? (count / totalWorkers) : 0;
             const diff = jobTargets[j] - share;
             if (diff > worstDiff) {
-                worstDiff = diff;
-                bestJob = j;
+                const max = global.civic[j].max !== undefined ? global.civic[j].max : -1;
+                if (max === -1 || count < max) {
+                    worstDiff = diff;
+                    bestJob = j;
+                }
             }
         });
 
         if (bestJob) {
-            const addBtn = document.querySelector(`#civ-${bestJob} .add`);
-            if (addBtn) {
-                addBtn.click();
-            }
+            global.civic[bestJob].workers++;
+            global.civic[defaultJob].workers--;
+            global.civic[bestJob].assigned = global.civic[bestJob].workers;
+            console.log(`[MAD Companion] Auto-assigned worker to ${bestJob}.`);
         }
     }
 
     function performAutoCraft() {
+        if (!window.evolve || !window.evolve.global) return;
         const global = window.evolve.global;
+
+        const craftResource = (resName) => {
+            const resEl = document.getElementById('res' + resName);
+            if (resEl && resEl.__vue__ && typeof resEl.__vue__.craft === 'function') {
+                resEl.__vue__.craft(resName, 10);
+                return true;
+            }
+            return false;
+        };
 
         // Wood -> Plywood
         if (global.resource.Wood && global.resource.Wood.max > 0 && global.resource.Wood.amount >= 0.90 * global.resource.Wood.max) {
-            const resEl = document.getElementById('resPlywood');
-            if (resEl && resEl.__vue__) resEl.__vue__.craft('Plywood', 10);
+            craftResource('Plywood');
         }
 
         // Stone -> Brick
         if (global.resource.Stone && global.resource.Stone.max > 0 && global.resource.Stone.amount >= 0.90 * global.resource.Stone.max) {
-            const resEl = document.getElementById('resBrick');
-            if (resEl && resEl.__vue__) resEl.__vue__.craft('Brick', 10);
+            craftResource('Brick');
         }
 
         // Iron -> Alloy
         if (global.resource.Iron && global.resource.Iron.max > 0 && global.resource.Iron.amount >= 0.90 * global.resource.Iron.max) {
-            const resEl = document.getElementById('resAlloy');
-            if (resEl && resEl.__vue__) resEl.__vue__.craft('Alloy', 10);
+            craftResource('Alloy');
         }
     }
 
     function performAutoMarketBuy() {
+        if (!window.evolve || !window.evolve.global) return;
         const global = window.evolve.global;
         const money = global.resource.Money;
         if (!money || money.amount < 0.90 * money.max) return;
@@ -530,6 +546,13 @@
 
         const action = getQueueAction(nextItem);
         if (!action || !action.cost) return;
+
+        function isResourceBuyable(resName) {
+            if (!global || !global.resource || !global.resource[resName]) return false;
+            if (global.resource[resName].trade !== undefined) return true;
+            const galacticBuyResources = new Set(['Deuterium', 'Neutronium', 'Adamantite', 'Elerium', 'Nano_Tube', 'Graphene', 'Stanene', 'Bolognium', 'Vitreloy']);
+            return galacticBuyResources.has(resName);
+        }
 
         let targetRes = null;
         let maxMissing = 0;
@@ -550,24 +573,20 @@
             }
         });
 
-        if (targetRes) {
-            const resEl = document.getElementById('res' + targetRes);
-            if (resEl && resEl.__vue__) {
-                const resVm = resEl.__vue__;
-                const price = resVm.value || 1;
+        if (targetRes && isResourceBuyable(targetRes)) {
+            const resObj = global.resource[targetRes];
+            if (resObj) {
+                const price = resObj.value || 1;
                 const amount = Math.min(
-                    Math.ceil(resVm.max * 0.10),
+                    Math.ceil(resObj.max * 0.10),
                     Math.floor((money.amount * 0.20) / price),
-                    resVm.max - resVm.amount
+                    resObj.max - resObj.amount
                 );
                 if (amount > 0) {
-                    resVm.amount += amount;
-                    const moneyVm = document.getElementById('resMoney')?.__vue__;
-                    if (moneyVm) {
-                        moneyVm.amount -= Math.round(price * amount);
-                        resVm.value += Number((amount / 5000).toFixed(2));
-                        console.log(`[MAD Companion] Auto-bought ${amount} ${targetRes} to unlock queue bottleneck.`);
-                    }
+                    resObj.amount += amount;
+                    global.resource.Money.amount -= Math.round(price * amount);
+                    resObj.value += Number((amount / 5000).toFixed(2));
+                    console.log(`[MAD Companion] Auto-bought ${amount} ${targetRes} to unlock queue bottleneck.`);
                 }
             }
         }
@@ -874,7 +893,7 @@
             ${conflictHTML}
             ${isConflict ? '' : challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v0.4.2</span>
+                <span>MAD Farm Companion v0.5.0</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
