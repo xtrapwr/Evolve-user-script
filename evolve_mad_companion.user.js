@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      0.5.1
+// @version      0.5.2
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -601,12 +601,12 @@
         style.id = 'mad-companion-styles';
         style.textContent = `
             #mad-companion-panel {
-                border: 1px solid rgba(128, 128, 128, 0.2);
-                border-radius: 4px;
-                padding: 10px;
-                margin-bottom: 15px;
+                border-top: 1px solid rgba(128, 128, 128, 0.25);
+                border-bottom: none;
+                padding: 10px 0;
                 font-size: 0.85rem;
-                background-color: rgba(0, 0, 0, 0.1);
+                background-color: transparent;
+                margin-bottom: 0;
             }
             .mad-title {
                 font-weight: bold;
@@ -666,18 +666,15 @@
         const container = msgQueue.parentNode;
         if (!container) return;
 
-        const buildQueue = document.getElementById('buildQueue');
-        const targetElement = buildQueue || msgQueue;
-
         let panel = document.getElementById('mad-companion-panel');
         if (!panel) {
             panel = document.createElement('div');
             panel.id = 'mad-companion-panel';
         }
         
-        // Ensure panel is placed immediately before targetElement (above building queue if present, otherwise above event log)
-        if (panel.parentNode !== container || panel.nextSibling !== targetElement) {
-            container.insertBefore(panel, targetElement);
+        // Ensure panel is placed immediately before msgQueue (below building queue, above event log)
+        if (panel.parentNode !== container || panel.nextSibling !== msgQueue) {
+            container.insertBefore(panel, msgQueue);
         }
 
         const global = window.evolve.global;
@@ -896,7 +893,7 @@
             ${conflictHTML}
             ${isConflict ? '' : challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v0.5.1</span>
+                <span>MAD Farm Companion v0.5.2</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
