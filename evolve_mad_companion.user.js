@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      0.5.0
+// @version      0.5.1
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -666,15 +666,18 @@
         const container = msgQueue.parentNode;
         if (!container) return;
 
+        const buildQueue = document.getElementById('buildQueue');
+        const targetElement = buildQueue || msgQueue;
+
         let panel = document.getElementById('mad-companion-panel');
         if (!panel) {
             panel = document.createElement('div');
             panel.id = 'mad-companion-panel';
         }
         
-        // Ensure panel is placed immediately before msgQueue (below building queue, above event log)
-        if (panel.parentNode !== container || panel.nextSibling !== msgQueue) {
-            container.insertBefore(panel, msgQueue);
+        // Ensure panel is placed immediately before targetElement (above building queue if present, otherwise above event log)
+        if (panel.parentNode !== container || panel.nextSibling !== targetElement) {
+            container.insertBefore(panel, targetElement);
         }
 
         const global = window.evolve.global;
@@ -893,7 +896,7 @@
             ${conflictHTML}
             ${isConflict ? '' : challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v0.5.0</span>
+                <span>MAD Farm Companion v0.5.1</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
