@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.1.4
+// @version      1.2.0
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -696,7 +696,7 @@
         panel.innerHTML = `
             ${challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v1.1.4</span>
+                <span>MAD Farm Companion v1.2.0</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
