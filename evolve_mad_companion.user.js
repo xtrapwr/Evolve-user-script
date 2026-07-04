@@ -539,6 +539,11 @@
                 const targetSpecies = pendingOnPlanet[0];
                 const targetGenus = GENUS_MAP[targetSpecies];
                 
+                // Check if we can evolve directly
+                const hasMassExtinction = global.stats?.achieve?.['mass_extinction']?.l >= 1;
+                const isSeededRun = global.race?.seeded;
+                const canEvolveDirectly = isSeededRun || hasMassExtinction || isSpeciesResetGlobally(targetSpecies);
+                
                 // Find all prehistoric fork buttons currently in the DOM
                 const activeForkKeys = Array.from(document.querySelectorAll('[id^="evolution-"]'))
                     .map(el => el.id.replace('evolution-', ''))
@@ -561,8 +566,12 @@
                     recommendedBranchName = recommendedForkName;
                 }
 
-                goalText = `Evolve: target ${targetSpecies.toUpperCase()}`;
+                const suffix = canEvolveDirectly ? '' : ' (via Sentience)';
+                goalText = `Evolve: target ${targetSpecies.toUpperCase()}${suffix}`;
                 goalClass = 'mad-pending';
+                
+                const needsT2Map = getNeedsT2Map(pendingOnPlanet);
+                
                 targetSpeciesHTML = `
                     <div class="mad-section">
                         <div style="font-weight:bold; margin-bottom:2px;">Target Branch:</div>
@@ -570,8 +579,7 @@
                         <div style="font-weight:bold; margin-bottom:4px;">Uncompleted Species:</div>
                         <div style="display:flex; flex-wrap:wrap; gap:4px;">
                             ${pendingOnPlanet.map(sp => {
-                                const genus = GENUS_MAP[sp];
-                                const needsBioseed = TARGET_GENUSES.includes(genus) && !isGenusBioseeded(genus);
+                                const needsBioseed = needsT2Map[sp];
                                 const badgeClass = needsBioseed ? 'mad-warn' : 'mad-pending';
                                 const badgeLabel = needsBioseed ? 'Needs T2' : 'Pending';
                                 return `<span class="mad-badge ${badgeClass}" style="margin:0; font-size:0.65rem; padding: 2px 4px;">${sp.toUpperCase()} (${badgeLabel})</span>`;
@@ -825,7 +833,13 @@
 
             let shouldHighlight = false;
 
-            if (key === targetSpecies) {
+            const hasMassExtinction = global.stats?.achieve?.['mass_extinction']?.l >= 1;
+            const isSeededRun = global.race?.seeded;
+            const canEvolveDirectly = isSeededRun || hasMassExtinction || isSpeciesResetGlobally(targetSpecies);
+
+            if (key === targetSpecies && canEvolveDirectly) {
+                shouldHighlight = true;
+            } else if (key === 'sentience' && !canEvolveDirectly) {
                 shouldHighlight = true;
             } else if (FORK_GENUS_MAP[key] && FORK_GENUS_MAP[key].includes(targetGenus)) {
                 shouldHighlight = true;
@@ -834,7 +848,8 @@
             }
 
             if (shouldHighlight) {
-                const needsBioseed = TARGET_GENUSES.includes(targetGenus) && !isGenusBioseeded(targetGenus);
+                const needsT2Map = getNeedsT2Map(pendingOnPlanet);
+                const needsBioseed = needsT2Map[targetSpecies];
                 if (needsBioseed) {
                     cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #ffdd57 !important; box-shadow: 0 0 5px #ffdd57 !important; opacity: 1.0 !important; }`);
                 } else {
