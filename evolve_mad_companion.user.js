@@ -272,15 +272,9 @@
         const hasMassExtinction = global.stats?.achieve?.['mass_extinction']?.l >= 1;
         const isSeededRun = global.race?.seeded;
 
-        // If they do not have mass_extinction AND this is not a seeded run:
-        // they can ONLY evolve species they have already completed extinction for globally.
-        if (!hasMassExtinction && !isSeededRun) {
-            return list.filter(species => isSpeciesResetGlobally(species));
-        }
-
         // If they don't have mass_extinction but it IS a seeded run, they are locked to the planet's native genus:
         const srace = global.race?.srace;
-        if (!hasMassExtinction && srace && GENUS_MAP[srace]) {
+        if (!hasMassExtinction && isSeededRun && srace && GENUS_MAP[srace]) {
             const nativeGenus = GENUS_MAP[srace];
             return list.filter(species => GENUS_MAP[species] === nativeGenus);
         }
