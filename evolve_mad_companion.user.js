@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      0.5.2
+// @version      1.1.4
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -83,11 +83,24 @@
         angelic: ['eden']
     };
 
+    const CORE_EVO_KEYS = [
+        'rna', 'dna', 'membrane', 'organelles', 'nucleus', 'eukaryotic_cell',
+        'mitochondria', 'sexual_reproduction', 'multicellular', 'sentience'
+    ];
+
     const FORK_GENUS_MAP = {
         // Kingdom level
         chitin: ['fungi'],
+        spores: ['fungi'],
         chloroplasts: ['plant'],
+        poikilohydric: ['plant'],
+        bryophyte: ['plant'],
         phagocytosis: [
+            'humanoid', 'giant', 'small', 'carnivore', 'herbivore', 'insectoid',
+            'reptilian', 'avian', 'aquatic', 'fey', 'heat', 'polar', 'sand',
+            'demonic', 'angelic'
+        ],
+        bilateral_symmetry: [
             'humanoid', 'giant', 'small', 'carnivore', 'herbivore', 'insectoid',
             'reptilian', 'avian', 'aquatic', 'fey', 'heat', 'polar', 'sand',
             'demonic', 'angelic'
@@ -95,22 +108,27 @@
         // Animal sub-branches (under phagocytosis -> bilateral_symmetry / vertebrates)
         athropods: ['insectoid'],
         eggshell: ['reptilian', 'avian'],
+        ectothermic: ['reptilian'],
+        endothermic: ['avian'],
         aquatic: ['aquatic'],
         fey: ['fey'],
         heat: ['heat'],
         polar: ['polar'],
         sand: ['sand'],
-        mammals: ['humanoid', 'giant', 'small', 'carnivore', 'herbivore', 'demonic', 'angelic']
+        mammals: ['humanoid', 'giant', 'small', 'carnivore', 'herbivore', 'demonic', 'angelic'],
+        // Mammal sub-branches
+        humanoid: ['humanoid'],
+        gigantism: ['giant'],
+        dwarfism: ['small'],
+        animalism: ['carnivore', 'herbivore'],
+        carnivore: ['carnivore'],
+        herbivore: ['herbivore'],
+        demonic: ['demonic'],
+        celestial: ['angelic']
     };
 
     // Userscript Settings (LocalStorage cached)
     let settings = {
-        enabled: true,
-        autoResearch: true,
-        autoBuild: true,
-        autoJobs: true,
-        autoCraft: true,
-        autoMarket: true,
         collapsed: false
     };
 
@@ -127,11 +145,38 @@
         localStorage.setItem('evolve_mad_companion_settings', JSON.stringify(settings));
     }
 
+    let realGlobal = null;
+    const originalStringify = JSON.stringify;
+    try {
+        JSON.stringify = function(value) {
+            if (value && typeof value === 'object' && value.version && value.resource && value.city) {
+                if (!window.evolve || value !== window.evolve.global) {
+                    realGlobal = value;
+                }
+            }
+            return originalStringify.apply(this, arguments);
+        };
+    } catch (e) {
+        console.error("[MAD Companion] Error hooking JSON.stringify:", e);
+    }
+
+    function getRealGlobal() {
+        if (realGlobal) return realGlobal;
+        if (!window.evolve || !window.exportGame) return null;
+        try {
+            window.exportGame();
+        } catch (e) {
+            console.error("[MAD Companion] Error calling exportGame:", e);
+        }
+        return realGlobal || window.evolve?.global;
+    }
+
     // ==========================================
     // 3. CORE LOGIC ENGINE
     // ==========================================
     function getUniverseAffix() {
-        const u = window.evolve?.global?.race?.universe || 'standard';
+        const global = getRealGlobal();
+        const u = global?.race?.universe || 'standard';
         if (u === 'evil') return 'e';
         if (u === 'antimatter') return 'a';
         if (u === 'heavy') return 'h';
@@ -141,18 +186,30 @@
     }
 
     function isGenusBioseeded(genus) {
-        const ach = window.evolve?.global?.stats?.achieve?.[`genus_${genus}`];
+        const global = getRealGlobal();
+        const ach = global?.stats?.achieve?.[`genus_${genus}`];
         return ach && ach.l >= 1;
     }
 
     function isSpeciesReset(species) {
+        const global = getRealGlobal();
         const affix = getUniverseAffix();
-        const ach = window.evolve?.global?.stats?.achieve?.[`extinct_${species}`];
+        const ach = global?.stats?.achieve?.[`extinct_${species}`];
         return ach && ach[affix] && ach[affix] > 0;
     }
 
+    function isSpeciesResetGlobally(species) {
+        const global = getRealGlobal();
+        const ach = global?.stats?.achieve?.[`extinct_${species}`];
+        return ach && ach.l && ach.l >= 1;
+    }
+
     function getAvailableSpecies(biome) {
-        const list = [
+        const global = getRealGlobal();
+        if (!global) return [];
+
+        // 1. Generate the base list of all species compatible with this biome
+        const baseList = [
             'human', 'elven', 'orc', 'dwarf',
             'cath', 'wolven', 'vulpine',
             'centaur', 'rhinotaur', 'capybara',
@@ -168,19 +225,110 @@
         Object.keys(BIOME_RESTRICTIONS).forEach(genus => {
             if (BIOME_RESTRICTIONS[genus].includes(biome)) {
                 Object.keys(GENUS_MAP).forEach(species => {
-                    if (GENUS_MAP[species] === genus && !list.includes(species)) {
-                        list.push(species);
+                    if (GENUS_MAP[species] === genus && !baseList.includes(species)) {
+                        baseList.push(species);
                     }
                 });
             }
         });
+
+        // 2. Apply prebiotic kingdom and sub-branch filters if chosen in current run
+        let list = baseList;
+        if (global.tech) {
+            // Kingdom restriction
+            if (global.tech.evo_animal) {
+                list = list.filter(species => GENUS_MAP[species] !== 'plant' && GENUS_MAP[species] !== 'fungi');
+            } else if (global.tech.evo_plant) {
+                list = list.filter(species => GENUS_MAP[species] === 'plant');
+            } else if (global.tech.evo_fungi) {
+                list = list.filter(species => GENUS_MAP[species] === 'fungi');
+            }
+
+            // Animal sub-branch restriction (only if they chose Animal and have progressed to evo >= 5)
+            if (global.tech.evo_animal && global.tech.evo >= 5) {
+                if (global.tech.evo_humanoid >= 1 || global.tech.evo_giant >= 1 || global.tech.evo_small >= 1 || global.tech.evo_demonic >= 1 || global.tech.evo_angelic >= 1 || global.tech.evo_animalism >= 1) {
+                    const mammalsGenuses = ['humanoid', 'giant', 'small', 'carnivore', 'herbivore', 'demonic', 'angelic'];
+                    list = list.filter(species => mammalsGenuses.includes(GENUS_MAP[species]));
+                } else if (global.tech.evo_sand >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'sand');
+                } else if (global.tech.evo_eggshell >= 2) {
+                    const eggshellGenuses = ['reptilian', 'avian'];
+                    list = list.filter(species => eggshellGenuses.includes(GENUS_MAP[species]));
+                } else if (global.tech.evo_insectoid >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'insectoid');
+                } else if (global.tech.evo_aquatic >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'aquatic');
+                } else if (global.tech.evo_fey >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'fey');
+                } else if (global.tech.evo_heat >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'heat');
+                } else if (global.tech.evo_polar >= 2) {
+                    list = list.filter(species => GENUS_MAP[species] === 'polar');
+                }
+            }
+        }
+
+        // 3. Apply game mechanics restrictions (mass extinction achievements check)
+        const hasMassExtinction = global.stats?.achieve?.['mass_extinction']?.l >= 1;
+        const isSeededRun = global.race?.seeded;
+
+        // If they do not have mass_extinction AND this is not a seeded run:
+        // they can ONLY evolve species they have already completed extinction for globally.
+        if (!hasMassExtinction && !isSeededRun) {
+            return list.filter(species => isSpeciesResetGlobally(species));
+        }
+
+        // If they don't have mass_extinction but it IS a seeded run, they are locked to the planet's native genus:
+        const srace = global.race?.srace;
+        if (!hasMassExtinction && srace && GENUS_MAP[srace]) {
+            const nativeGenus = GENUS_MAP[srace];
+            return list.filter(species => GENUS_MAP[species] === nativeGenus);
+        }
+
         return list;
+    }
+
+    function getNeedsT2Map(uncompletedList) {
+        const needsT2Map = {};
+        const genusGroups = {};
+        uncompletedList.forEach(sp => {
+            const genus = GENUS_MAP[sp];
+            if (!genusGroups[genus]) {
+                genusGroups[genus] = [];
+            }
+            genusGroups[genus].push(sp);
+        });
+        uncompletedList.forEach(sp => {
+            const genus = GENUS_MAP[sp];
+            let needsT2 = false;
+            if (TARGET_GENUSES.includes(genus) && !isGenusBioseeded(genus)) {
+                const group = genusGroups[genus];
+                const t2Target = group[group.length - 1];
+                if (sp === t2Target) {
+                    needsT2 = true;
+                }
+            }
+            needsT2Map[sp] = needsT2;
+        });
+        return needsT2Map;
     }
 
     function getUncompletedSpeciesOnPlanet(biome) {
         const available = getAvailableSpecies(biome);
-        return available.filter(species => !isSpeciesReset(species));
+        const uncompleted = available.filter(species => !isSpeciesReset(species));
+        
+        const needsT2Map = getNeedsT2Map(uncompleted);
+        
+        return uncompleted.sort((a, b) => {
+            const aNeedsT2 = needsT2Map[a];
+            const bNeedsT2 = needsT2Map[b];
+            
+            if (aNeedsT2 && !bNeedsT2) return 1;
+            if (!aNeedsT2 && bNeedsT2) return -1;
+            return 0;
+        });
     }
+
 
     function isFinalEvolutionButton(key) {
         return key === 'sentience' || 
@@ -191,7 +339,7 @@
     }
 
     function getQueueAction(item) {
-        if (!window.evolve || !window.evolve.global) return null;
+        if (!window.evolve || !getRealGlobal()) return null;
         const actions = window.evolve.actions;
         const segments = item.id ? item.id.split("-") : [];
         
@@ -221,376 +369,9 @@
         }
         return null;
     }
-
     // ==========================================
-    // 4. AUTOMATION LOOPS
+    // 4. AUTOMATION LOOPS (Removed in v1.0.0)
     // ==========================================
-    function runAutomation() {
-        if (window.isEvolveAutobuyActive || document.getElementById('autobuy-dashboard')) {
-            console.warn("[MAD Companion] Auto-Buy detected! Companion automation is paused to prevent conflicts.");
-            return;
-        }
-        if (!settings.enabled || !window.evolve || !window.evolve.global) return;
-        const global = window.evolve.global;
-        if (global.settings.pause) return;
-
-        // Skip automation if in prebiotic phase
-        if (global.race.species === 'protoplasm' || !global.race.species) return;
-
-        if (settings.autoJobs) performAutoJobs();
-        if (settings.autoCraft) performAutoCraft();
-        if (settings.autoMarket) performAutoMarketBuy();
-        if (settings.autoResearch) performAutoResearch();
-
-        // Sync Evolve's native building queue pause state with autoBuild setting
-        if (global.queue && global.queue.pause !== undefined) {
-            global.queue.pause = !settings.autoBuild;
-        }
-    }
-
-    function performAutoResearch() {
-        if (!window.evolve || !window.evolve.global || !window.evolve.actions || !window.evolve.actions.tech) return;
-
-        const global = window.evolve.global;
-        const actions = window.evolve.actions;
-
-        // 1. Replicated tech checks helpers
-        function skipRequirement(req) {
-            if (global.race && global.race['flier'] && req === 'cement') {
-                return true;
-            }
-            return false;
-        }
-
-        function checkTechPath(tech_name) {
-            const path = global.race && global.race['truepath'] ? 'truepath' : 'standard';
-            const action = actions.tech[tech_name];
-            if (!action) return false;
-            const techPath = {
-                standard: ['primitive', 'discovery', 'civilized', 'industrialized', 'globalized', 'early_space', 'deep_space', 'interstellar', 'intergalactic'],
-                truepath: ['primitive', 'discovery', 'civilized', 'industrialized', 'globalized', 'early_space', 'deep_space', 'solar', 'tauceti'],
-            };
-            if ((!techPath[path].includes(action.era) && !action.hasOwnProperty('path')) || (action.hasOwnProperty('path') && !action.path.includes(path))) {
-                return false;
-            }
-            return true;
-        }
-
-        function checkOldTech(tech_name) {
-            const action = actions.tech[tech_name];
-            if (!action || !action.grant) return false;
-            const tch = action.grant[0];
-            const val = action.grant[1];
-            if (global.tech[tch] && global.tech[tch] >= val) {
-                switch (tech_name) {
-                    case 'fanaticism':
-                        return Boolean(global.tech['fanaticism']);
-                    case 'anthropology':
-                        return Boolean(global.tech['anthropology']);
-                    case 'deify':
-                        return Boolean(global.tech['ancient_deify']);
-                    case 'study':
-                        return Boolean(global.tech['ancient_study']);
-                    case 'isolation_protocol':
-                        return Boolean(global.tech['isolation']);
-                    case 'focus_cure':
-                        return Boolean(global.tech['focus_cure']);
-                    case 'vax_strat1':
-                        return Boolean(global.tech['vax_p']);
-                    case 'vax_strat2':
-                        return Boolean(global.tech['vax_f']);
-                    default:
-                        return true;
-                }
-            }
-            return false;
-        }
-
-        function checkTechQualifications(action, tech_name) {
-            if (action['condition'] && !action.condition()) {
-                return false;
-            }
-            if (action['not_trait']) {
-                for (let i = 0; i < action.not_trait.length; i++) {
-                    if (global.race && global.race[action.not_trait[i]]) {
-                        return false;
-                    }
-                }
-            }
-            if (action['trait']) {
-                for (let i = 0; i < action.trait.length; i++) {
-                    if (global.race && !global.race[action.trait[i]]) {
-                        return false;
-                    }
-                }
-            }
-            if (action['not_gene']) {
-                for (let i = 0; i < action.not_gene.length; i++) {
-                    if (global.genes && global.genes[action.not_gene[i]]) {
-                        return false;
-                    }
-                }
-            }
-            if (action['gene']) {
-                for (let i = 0; i < action.gene.length; i++) {
-                    if (global.genes && !global.genes[action.gene[i]]) {
-                        return false;
-                    }
-                }
-            }
-            if (action['not_tech']) {
-                for (let i = 0; i < action.not_tech.length; i++) {
-                    if (global.tech && global.tech[action.not_tech[i]]) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        function checkTechRequirements(tech_name, predList) {
-            const action = actions.tech[tech_name];
-            if (!action) return false;
-            let isMet = true;
-            let precog = false;
-            let failChecks = {};
-
-            if (action.reqs) {
-                Object.keys(action.reqs).forEach(req => {
-                    if (skipRequirement(req)) return;
-                    if (!global.tech[req] || global.tech[req] < action.reqs[req]) {
-                        isMet = false;
-                        failChecks[req] = action.reqs[req];
-                    }
-                });
-            }
-
-            if (predList && typeof predList === 'object' && global.genes && global.genes.queue >= 3) {
-                precog = true;
-                if (global.r_queue && global.r_queue.queue) {
-                    global.r_queue.queue.forEach(q => {
-                        if (checkTechRequirements(q.type, null)) {
-                            const qAction = actions[q.action]?.[q.type];
-                            if (qAction && qAction.grant) {
-                                predList[qAction.grant[0]] = { v: qAction.grant[1], a: q.type };
-                            }
-                        }
-                    });
-                }
-                Object.keys(failChecks).forEach(req => {
-                    const cTech = global.tech[req] || 0;
-                    if (skipRequirement(req)) return;
-                    if (!predList[req] || predList[req].v < action.reqs[req] || predList[req].v > cTech + 1) {
-                        precog = false;
-                    }
-                });
-            }
-
-            if ((isMet || precog) && (!global.tech[action.grant[0]] || global.tech[action.grant[0]] < action.grant[1])) {
-                return isMet ? 'ok' : 'precog';
-            }
-            return false;
-        }
-
-        // 2. Scan all techs
-        const predList = {};
-        const isQueueUnlocked = global.tech && global.tech['r_queue'] && global.r_queue && global.r_queue.display;
-
-        for (const tech_name of Object.keys(actions.tech)) {
-            const action = actions.tech[tech_name];
-            if (!action) continue;
-
-            // Basic checks
-            if (!checkTechPath(tech_name)) continue;
-            if (checkOldTech(tech_name)) continue;
-            if (!checkTechQualifications(action, tech_name)) continue;
-            if (!checkTechRequirements(tech_name, predList)) continue;
-
-            // Affordability check
-            if (!window.evolve.checkAffordable(action, false)) continue;
-
-            // 3. Execution
-            if (isQueueUnlocked) {
-                // Check if already in queue
-                const isAlreadyQueued = global.r_queue.queue.some(q => q.id === action.id);
-                if (!isAlreadyQueued && global.r_queue.queue.length < global.r_queue.max) {
-                    global.r_queue.queue.push({
-                        id: action.id,
-                        action: 'tech',
-                        type: tech_name,
-                        label: typeof action.title === 'string' ? action.title : action.title(),
-                        cna: false,
-                        time: 0,
-                        bres: false,
-                        req: true
-                    });
-                    console.log(`[MAD Companion] Queued research: ${tech_name}`);
-                    break; // Process one per tick
-                }
-            } else {
-                // Early game: no research queue, trigger immediately
-                if (action.action({isQueue: false})) {
-                    const tech_grant_key = action.grant[0];
-                    const tech_grant_val = action.grant[1];
-                    global.tech[tech_grant_key] = tech_grant_val;
-                    if (action['post']) {
-                        try {
-                            action.post();
-                        } catch (e) {
-                            console.error(`[MAD Companion] Error in post callback for ${tech_name}:`, e);
-                        }
-                    }
-                    console.log(`[MAD Companion] Researched: ${tech_name}`);
-                    break; // Process one per tick to prevent money cap issue
-                }
-            }
-        }
-    }
-
-    function performAutoJobs() {
-        if (!window.evolve || !window.evolve.global) return;
-        const global = window.evolve.global;
-        const defaultJob = global.civic.d_job || 'unemployed';
-        const unemployedCount = global.civic[defaultJob]?.workers || 0;
-        if (unemployedCount <= 0) return;
-
-        // Prevent Starvation
-        const foodRate = global.resource.Food?.rate || 0;
-        if (foodRate <= 2 && global.civic.farmer && global.civic.farmer.display) {
-            const farmerMax = global.civic.farmer.max !== undefined ? global.civic.farmer.max : -1;
-            if (farmerMax === -1 || global.civic.farmer.workers < farmerMax) {
-                global.civic.farmer.workers++;
-                global.civic[defaultJob].workers--;
-                global.civic.farmer.assigned = global.civic.farmer.workers;
-                console.log(`[MAD Companion] Auto-assigned worker to farmer to prevent starvation.`);
-                return;
-            }
-        }
-
-        const jobTargets = {
-            scholar: 0.40,
-            farmer: 0.20,
-            lumberjack: 0.20,
-            miner: 0.20
-        };
-
-        const activeJobs = Object.keys(jobTargets).filter(j => global.civic[j]?.display);
-        if (activeJobs.length === 0) return;
-
-        let totalWorkers = 0;
-        activeJobs.forEach(j => {
-            totalWorkers += global.civic[j].workers || 0;
-        });
-
-        let bestJob = null;
-        let worstDiff = -Infinity;
-
-        activeJobs.forEach(j => {
-            const count = global.civic[j].workers || 0;
-            const share = totalWorkers > 0 ? (count / totalWorkers) : 0;
-            const diff = jobTargets[j] - share;
-            if (diff > worstDiff) {
-                const max = global.civic[j].max !== undefined ? global.civic[j].max : -1;
-                if (max === -1 || count < max) {
-                    worstDiff = diff;
-                    bestJob = j;
-                }
-            }
-        });
-
-        if (bestJob) {
-            global.civic[bestJob].workers++;
-            global.civic[defaultJob].workers--;
-            global.civic[bestJob].assigned = global.civic[bestJob].workers;
-            console.log(`[MAD Companion] Auto-assigned worker to ${bestJob}.`);
-        }
-    }
-
-    function performAutoCraft() {
-        if (!window.evolve || !window.evolve.global) return;
-        const global = window.evolve.global;
-
-        const craftResource = (resName) => {
-            const resEl = document.getElementById('res' + resName);
-            if (resEl && resEl.__vue__ && typeof resEl.__vue__.craft === 'function') {
-                resEl.__vue__.craft(resName, 10);
-                return true;
-            }
-            return false;
-        };
-
-        // Wood -> Plywood
-        if (global.resource.Wood && global.resource.Wood.max > 0 && global.resource.Wood.amount >= 0.90 * global.resource.Wood.max) {
-            craftResource('Plywood');
-        }
-
-        // Stone -> Brick
-        if (global.resource.Stone && global.resource.Stone.max > 0 && global.resource.Stone.amount >= 0.90 * global.resource.Stone.max) {
-            craftResource('Brick');
-        }
-
-        // Iron -> Alloy
-        if (global.resource.Iron && global.resource.Iron.max > 0 && global.resource.Iron.amount >= 0.90 * global.resource.Iron.max) {
-            craftResource('Alloy');
-        }
-    }
-
-    function performAutoMarketBuy() {
-        if (!window.evolve || !window.evolve.global) return;
-        const global = window.evolve.global;
-        const money = global.resource.Money;
-        if (!money || money.amount < 0.90 * money.max) return;
-
-        if (!global.queue || !global.queue.queue || global.queue.queue.length === 0) return;
-        const nextItem = global.queue.queue[0];
-
-        const action = getQueueAction(nextItem);
-        if (!action || !action.cost) return;
-
-        function isResourceBuyable(resName) {
-            if (!global || !global.resource || !global.resource[resName]) return false;
-            if (global.resource[resName].trade !== undefined) return true;
-            const galacticBuyResources = new Set(['Deuterium', 'Neutronium', 'Adamantite', 'Elerium', 'Nano_Tube', 'Graphene', 'Stanene', 'Bolognium', 'Vitreloy']);
-            return galacticBuyResources.has(resName);
-        }
-
-        let targetRes = null;
-        let maxMissing = 0;
-
-        Object.keys(action.cost).forEach(res => {
-            if (res === 'Money') return;
-            const costFn = action.cost[res];
-            const cost = typeof costFn === 'function' ? costFn(0) : costFn;
-            const current = global.resource[res]?.amount || 0;
-            const max = global.resource[res]?.max || 0;
-
-            if (cost > current && current < max) {
-                const missing = cost - current;
-                if (missing > maxMissing) {
-                    maxMissing = missing;
-                    targetRes = res;
-                }
-            }
-        });
-
-        if (targetRes && isResourceBuyable(targetRes)) {
-            const resObj = global.resource[targetRes];
-            if (resObj) {
-                const price = resObj.value || 1;
-                const amount = Math.min(
-                    Math.ceil(resObj.max * 0.10),
-                    Math.floor((money.amount * 0.20) / price),
-                    resObj.max - resObj.amount
-                );
-                if (amount > 0) {
-                    resObj.amount += amount;
-                    global.resource.Money.amount -= Math.round(price * amount);
-                    resObj.value += Number((amount / 5000).toFixed(2));
-                    console.log(`[MAD Companion] Auto-bought ${amount} ${targetRes} to unlock queue bottleneck.`);
-                }
-            }
-        }
-    }
 
     // ==========================================
     // 5. UI GENERATION & OVERLAYS
@@ -602,11 +383,21 @@
         style.textContent = `
             #mad-companion-panel {
                 border-top: 1px solid rgba(128, 128, 128, 0.25);
-                border-bottom: none;
+                border-bottom: 1px solid rgba(128, 128, 128, 0.25);
                 padding: 10px 0;
                 font-size: 0.85rem;
                 background-color: transparent;
                 margin-bottom: 0;
+            }
+            .queueCol #mad-companion-panel {
+                padding: 10px 1rem;
+            }
+            .queueCol #mad-companion-panel:first-child {
+                margin-top: 2.625rem;
+            }
+            #mad-companion-panel + #buildQueue,
+            #mad-companion-panel + #msgQueue {
+                border-top: none !important;
             }
             .mad-title {
                 font-weight: bold;
@@ -659,26 +450,51 @@
     }
 
     function updateDashboard() {
-        if (!window.evolve || !window.evolve.global) return;
-        
+        if (!window.evolve) return;
+        const global = getRealGlobal();
+        if (!global) return;
+
+
+
+        const isPrehistoric = document.querySelector('#race .name')?.textContent.toLowerCase().includes('prehistoric');
+        const isPrebiotic = isPrehistoric || global.race.species === 'protoplasm' || !global.race.species;
+        const planetContainers = Array.from(document.querySelectorAll('#evolution .action a.button'));
+        const biomesList = ['desert', 'forest', 'grassland', 'tundra', 'oceanic', 'volcanic', 'ashland', 'swamp', 'taiga', 'savanna', 'hellscape', 'eden'];
+        const isPlanetScreen = planetContainers.length > 0 && planetContainers.some(card => {
+            const txt = card.textContent.toLowerCase();
+            return biomesList.some(b => txt.includes(b));
+        });
+
+        const shouldShowUI = isPrebiotic || isPlanetScreen;
+
+        let panel = document.getElementById('mad-companion-panel');
+        if (!shouldShowUI) {
+            if (panel) {
+                panel.style.display = 'none';
+            }
+            return;
+        }
+
         const msgQueue = document.getElementById('msgQueue');
         if (!msgQueue) return;
         const container = msgQueue.parentNode;
         if (!container) return;
 
-        let panel = document.getElementById('mad-companion-panel');
+        const buildQueue = document.getElementById('buildQueue');
+        const targetElement = buildQueue || msgQueue;
+
         if (!panel) {
             panel = document.createElement('div');
             panel.id = 'mad-companion-panel';
         }
+        panel.style.display = '';
         
-        // Ensure panel is placed immediately before msgQueue (below building queue, above event log)
-        if (panel.parentNode !== container || panel.nextSibling !== msgQueue) {
-            container.insertBefore(panel, msgQueue);
+        // Ensure panel is placed immediately before targetElement (above building queue if present, otherwise above event log)
+        if (panel.parentNode !== container || panel.nextSibling !== targetElement) {
+            container.insertBefore(panel, targetElement);
         }
 
-        const global = window.evolve.global;
-        const species = global.race.species || 'Unknown';
+        const species = isPrebiotic ? 'protoplasm' : (global.race.species || 'Unknown');
         const biome = global.city.biome || 'Unknown';
         const universe = global.race.universe || 'Standard';
 
@@ -712,7 +528,6 @@
         let goalClass = '';
         let targetSpeciesHTML = '';
         
-        const isPrebiotic = global.race.species === 'protoplasm' || !global.race.species;
         const missingChallenge = !global.race.no_trade || !global.race.no_crispr;
 
         if (isPrebiotic) {
@@ -787,11 +602,6 @@
             goalText = `⚠️ RESET BIOSEED! All species on this planet are MAD completed.`;
             goalClass = 'mad-warn';
         }
-        const isConflict = window.isEvolveAutobuyActive || document.getElementById('autobuy-dashboard');
-        let conflictHTML = '';
-        if (isConflict) {
-            conflictHTML = `<div class="challenge-alert">⚠️ CONFLICT DETECTED!<br>Evolve Auto-Buy is active! Disable it to use Evolve MAD Farm Companion.</div>`;
-        }
 
         // Challenge reminder
         let challengeReminderHTML = '';
@@ -802,14 +612,6 @@
                 challengeReminderHTML = `<div class="challenge-alert">⚠️ CHALLENGE GENES MISSED!<br>Ensure No Free Trade & Weak CRISPR are ON!</div>`;
             }
         }
-
-        // Check if planet selection screen is active and retrieve choices
-        const planetContainers = Array.from(document.querySelectorAll('#evolution .action a.button'));
-        const biomesList = ['desert', 'forest', 'grassland', 'tundra', 'oceanic', 'volcanic', 'ashland', 'swamp', 'taiga', 'savanna', 'hellscape', 'eden'];
-        const isPlanetScreen = planetContainers.length > 0 && planetContainers.some(card => {
-            const txt = card.textContent.toLowerCase();
-            return biomesList.some(b => txt.includes(b));
-        });
 
         let planetSectionHTML = '';
         if (isPlanetScreen) {
@@ -890,17 +692,15 @@
         }
 
         panel.innerHTML = `
-            ${conflictHTML}
-            ${isConflict ? '' : challengeReminderHTML}
+            ${challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v0.5.2</span>
+                <span>MAD Farm Companion v1.1.4</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
-                ${isConflict ? '<div style="color: #ff3860; font-weight: bold; text-align: center; padding: 10px;">Companion is paused due to Auto-Buy conflict.</div>' : `
                 <div style="margin-bottom: 5px;"><strong>Universe:</strong> ${universe.toUpperCase()}</div>
                 <div style="margin-bottom: 5px;"><strong>Biome:</strong> ${biome.toUpperCase()}</div>
-                <div style="margin-bottom: 5px;"><strong>Active Run:</strong> ${species.toUpperCase()}</div>`}
+                <div style="margin-bottom: 5px;"><strong>Active Run:</strong> ${species.toUpperCase()}</div>
                 <div style="margin-bottom: 8px;"><strong>Farmed MADs:</strong> ${completedMADCount} Completed</div>
 
                 <div class="mad-section">
@@ -916,34 +716,6 @@
                     <div style="font-weight:bold; margin-bottom:4px;">Genelab Custom Traits:</div>
                     ${traitGenusesHTML}
                 </div>
-
-                <div class="mad-section" style="display:flex; flex-direction:column; gap:4px;">
-                    <div style="font-weight:bold;">Automation Options:</div>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-master" ${settings.enabled ? 'checked' : ''}>
-                        <span>Master Enable</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-research" ${settings.autoResearch ? 'checked' : ''}>
-                        <span>Auto-Research</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-build" ${settings.autoBuild ? 'checked' : ''}>
-                        <span>Auto-Build (Queue)</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-jobs" ${settings.autoJobs ? 'checked' : ''}>
-                        <span>Auto-Jobs</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-craft" ${settings.autoCraft ? 'checked' : ''}>
-                        <span>Auto-Craft Capped</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="mad-opt-market" ${settings.autoMarket ? 'checked' : ''}>
-                        <span>Auto-Market Queue Help</span>
-                    </label>
-                </div>
             </div>
         `;
 
@@ -953,37 +725,47 @@
             saveSettings();
             updateDashboard();
         });
-        
-        const bindToggle = (id, key) => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('change', (e) => {
-                    settings[key] = e.target.checked;
-                    saveSettings();
-                });
-            }
-        };
-
-        bindToggle('mad-opt-master', 'enabled');
-        bindToggle('mad-opt-research', 'autoResearch');
-        bindToggle('mad-opt-build', 'autoBuild');
-        bindToggle('mad-opt-jobs', 'autoJobs');
-        bindToggle('mad-opt-craft', 'autoCraft');
-        bindToggle('mad-opt-market', 'autoMarket');
     }
 
     // ==========================================
     // 6. EVOLUTION & PLANET SCREEN GUIDES
     // ==========================================
     function applyGuides() {
-        if (!window.evolve || !window.evolve.global) return;
-        const global = window.evolve.global;
+        if (!window.evolve) return;
+        const global = getRealGlobal();
+        if (!global) return;
+
+        const isPrehistoric = document.querySelector('#race .name')?.textContent.toLowerCase().includes('prehistoric');
+        const isPrebiotic = isPrehistoric || global.race.species === 'protoplasm' || !global.race.species;
+        const planetContainers = Array.from(document.querySelectorAll('#evolution .action a.button'));
+        const biomesList = ['desert', 'forest', 'grassland', 'tundra', 'oceanic', 'volcanic', 'ashland', 'swamp', 'taiga', 'savanna', 'hellscape', 'eden'];
+        const isPlanetScreen = planetContainers.length > 0 && planetContainers.some(card => {
+            const txt = card.textContent.toLowerCase();
+            return biomesList.some(b => txt.includes(b));
+        });
+
+        const shouldShowUI = isPrebiotic || isPlanetScreen;
+
+        let guidesStyle = document.getElementById('mad-companion-guides-style');
+        if (!shouldShowUI) {
+            if (guidesStyle) {
+                guidesStyle.textContent = '';
+            }
+            if (planetContainers.length > 0) {
+                planetContainers.forEach(card => {
+                    card.style.border = '';
+                    card.style.boxShadow = '';
+                    card.style.opacity = '';
+                });
+            }
+            return;
+        }
+
         const affix = getUniverseAffix();
 
         // 1. Evolution Page Species/Genus/Fork Guides
         let cssRules = [];
         const elements = document.querySelectorAll('[id^="evolution-"]');
-        const isPrebiotic = global.race.species === 'protoplasm' || !global.race.species;
         const missingChallenge = !global.race.no_trade || !global.race.no_crispr;
 
         // Check if final evolution screen is active (either Sentience button or specific species buttons are in the DOM)
@@ -1023,47 +805,55 @@
                 return;
             }
 
-            if (GENUS_MAP[key]) {
-                // It is a species!
-                const isReset = isSpeciesReset(key);
-                const genus = GENUS_MAP[key];
-                const needsBioseed = TARGET_GENUSES.includes(genus) && !isGenusBioseeded(genus);
+            // We want to highlight the path to targetSpecies.
+            const pendingOnPlanet = getUncompletedSpeciesOnPlanet(global.city.biome || 'Unknown');
+            let targetSpecies = null;
+            let targetGenus = null;
+            if (pendingOnPlanet.length > 0 && isPrebiotic) {
+                targetSpecies = pendingOnPlanet[0];
+                targetGenus = GENUS_MAP[targetSpecies];
+            }
 
-                if (isReset) {
-                    cssRules.push(`#${el.id} a.button, #${el.id} button { border: 1px dashed #7a7a7a !important; box-shadow: none !important; opacity: 0.5 !important; }`);
+            if (!targetSpecies) {
+                // No target, dim everything except base UI buttons like bunker/challenge
+                if (['bunker', 'trade', 'crispr', 'junk'].includes(key) || key.startsWith('s-') || CORE_EVO_KEYS.includes(key)) {
+                    // Let it be
                 } else {
-                    if (needsBioseed) {
-                        cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #ffdd57 !important; box-shadow: 0 0 5px #ffdd57 !important; opacity: 1.0 !important; }`);
-                    } else {
-                        cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
-                    }
+                    cssRules.push(`#${el.id} a.button, #${el.id} button { border: 1px dashed #7a7a7a !important; box-shadow: none !important; opacity: 0.5 !important; }`);
                 }
-            } else if (TARGET_GENUSES.includes(key)) {
-                // It is a genus!
-                const done = isGenusBioseeded(key);
-                if (done) {
-                    cssRules.push(`#${el.id} a.button, #${el.id} button { border: 1px dashed #7a7a7a !important; box-shadow: none !important; opacity: 0.5 !important; }`);
-                } else {
+                return;
+            }
+
+            // Exclude CORE_EVO_KEYS from ANY styling (leave default Evolve styling)
+            if (CORE_EVO_KEYS.includes(key)) {
+                return;
+            }
+
+            let shouldHighlight = false;
+
+            if (key === targetSpecies) {
+                shouldHighlight = true;
+            } else if (FORK_GENUS_MAP[key] && FORK_GENUS_MAP[key].includes(targetGenus)) {
+                shouldHighlight = true;
+            } else if (key === targetGenus) { 
+                shouldHighlight = true;
+            }
+
+            if (shouldHighlight) {
+                const needsBioseed = TARGET_GENUSES.includes(targetGenus) && !isGenusBioseeded(targetGenus);
+                if (needsBioseed) {
                     cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #ffdd57 !important; box-shadow: 0 0 5px #ffdd57 !important; opacity: 1.0 !important; }`);
+                } else {
+                    cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
                 }
-            } else if (FORK_GENUS_MAP.hasOwnProperty(key)) {
-                // Prehistoric Kingdom & Sub-branch Fork buttons
-                const pendingOnPlanet = getUncompletedSpeciesOnPlanet(global.city.biome || 'Unknown');
-                if (pendingOnPlanet.length > 0 && (global.race.species === 'protoplasm' || !global.race.species)) {
-                    const targetSpecies = pendingOnPlanet[0];
-                    const targetGenus = GENUS_MAP[targetSpecies];
-
-                    if (FORK_GENUS_MAP[key].includes(targetGenus)) {
-                        cssRules.push(`#${el.id} a.button, #${el.id} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
-                    } else {
-                        cssRules.push(`#${el.id} a.button, #${el.id} button { border: 1px dashed #7a7a7a !important; box-shadow: none !important; opacity: 0.5 !important; }`);
-                    }
+            } else {
+                if (!['bunker', 'trade', 'crispr', 'junk'].includes(key)) {
+                    cssRules.push(`#${el.id} a.button, #${el.id} button { border: 1px dashed #7a7a7a !important; box-shadow: none !important; opacity: 0.5 !important; }`);
                 }
             }
         });
 
         // Apply generated CSS rules to the dynamic style block
-        let guidesStyle = document.getElementById('mad-companion-guides-style');
         if (!guidesStyle) {
             guidesStyle = document.createElement('style');
             guidesStyle.id = 'mad-companion-guides-style';
@@ -1072,13 +862,6 @@
         guidesStyle.textContent = cssRules.join('\n');
 
         // 2. Planet Selection Guides
-        const planetContainers = Array.from(document.querySelectorAll('#evolution .action a.button'));
-        const biomesList = ['desert', 'forest', 'grassland', 'tundra', 'oceanic', 'volcanic', 'ashland', 'swamp', 'taiga', 'savanna', 'hellscape', 'eden'];
-        const isPlanetScreen = planetContainers.length > 0 && planetContainers.some(card => {
-            const txt = card.textContent.toLowerCase();
-            return biomesList.some(b => txt.includes(b));
-        });
-
         if (isPlanetScreen) {
             // Find all missing genuses/biomes
             const missingAquatic = !isSpeciesReset('sharkin') || !isSpeciesReset('octigoran');
@@ -1095,38 +878,32 @@
 
                 const text = card.textContent.toLowerCase();
                 let priorityText = '';
-                let priorityClass = '';
                 let isPriority = false;
 
                 if (text.includes('oceanic') || text.includes('swamp')) {
                     if (missingAquatic) {
                         priorityText = 'Priority 1';
-                        priorityClass = 'mad-pending';
                         isPriority = true;
                     }
                 } else if (text.includes('volcanic') || text.includes('ashland')) {
                     if (missingHeat) {
                         priorityText = 'Priority 2';
-                        priorityClass = 'mad-pending';
                         isPriority = true;
                     }
                 } else if (text.includes('tundra') || text.includes('taiga')) {
                     if (missingPolar) {
                         priorityText = 'Priority 3';
-                        priorityClass = 'mad-pending';
                         isPriority = true;
                     }
                 } else if (text.includes('desert')) {
                     if (missingSand) {
                         priorityText = 'Priority 4';
-                        priorityClass = 'mad-pending';
                         isPriority = true;
                     }
                 }
 
                 if (!priorityText && (text.includes('forest') || text.includes('grassland') || text.includes('savanna'))) {
                     priorityText = 'Priority 5';
-                    priorityClass = 'mad-complete';
                 }
 
                 if (isPriority) {
@@ -1154,9 +931,6 @@
     function init() {
         loadSettings();
         injectStyles();
-        
-        // Automation ticks every 2 seconds
-        setInterval(runAutomation, 2000);
         
         // UI rendering loop (every 500ms for fast feedback)
         setInterval(() => {
