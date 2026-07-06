@@ -1042,6 +1042,36 @@
                 card.style.opacity = '';
             });
         }
+
+        // 3. Research Guides Highlighting
+        const mTab = document.getElementById('mTabResearch');
+        if (mTab) {
+            let nextTech = null;
+            for (let i = 0; i < MAD_TECH_PATH.length; i++) {
+                if (!isTechResearched(MAD_TECH_PATH[i].key)) {
+                    nextTech = MAD_TECH_PATH[i];
+                    break;
+                }
+            }
+            
+            let researchCssRules = [];
+            if (nextTech) {
+                const targetId = nextTech.id;
+                researchCssRules.push(`#${targetId} a.button, #${targetId} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
+                researchCssRules.push(`#tech .action:not(#${targetId}) a.button, #tech .action:not(#${targetId}) button { opacity: 0.4 !important; border: 1px dashed #7a7a7a !important; box-shadow: none !important; }`);
+            }
+            
+            let resStyleEl = document.getElementById('mad-companion-research-guides-style');
+            if (!resStyleEl) {
+                resStyleEl = document.createElement('style');
+                resStyleEl.id = 'mad-companion-research-guides-style';
+                document.head.appendChild(resStyleEl);
+            }
+            resStyleEl.textContent = researchCssRules.join('\n');
+        } else {
+            const resStyleEl = document.getElementById('mad-companion-research-guides-style');
+            if (resStyleEl) resStyleEl.textContent = '';
+        }
     }
 
     // ==========================================
