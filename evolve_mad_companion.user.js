@@ -867,39 +867,40 @@
         const global = getRealGlobal();
         if (!global || !window.evolve) return;
         
-        // Find next target tech
-        let nextTech = null;
-        for (let i = 0; i < MAD_TECH_PATH.length; i++) {
-            if (!isTechResearched(MAD_TECH_PATH[i].key)) {
-                nextTech = MAD_TECH_PATH[i];
-                break;
+        // Find all available uncompleted milestone technologies
+        let availableTechs = [];
+        MAD_TECH_PATH.forEach(tech => {
+            if (!isTechResearched(tech.key)) {
+                const element = document.getElementById(tech.id);
+                if (element) {
+                    availableTechs.push(tech);
+                }
             }
-        }
-        if (!nextTech) return;
+        });
         
-        const techKey = nextTech.key;
+        if (availableTechs.length === 0) return;
         
-        // Check if the DOM button is present and affordable
-        const element = document.getElementById(nextTech.id);
-        if (!element) return; // not available for research yet
-        
-        if (!checkTechAffordable(techKey)) return;
-        
-        // Hybrid logic
-        if (global.r_queue && global.r_queue.display) {
-            const isQueued = global.r_queue.queue && global.r_queue.queue.some(q => q === techKey);
-            if (!isQueued) {
-                global.r_queue.queue.push(techKey);
-                console.log(`[MAD Companion] Injected ${techKey} into research queue.`);
-                const rqVm = document.getElementById('resQueue')?.__vue__;
-                if (rqVm && typeof rqVm.$forceUpdate === 'function') rqVm.$forceUpdate();
-            }
-        } else {
-            const actionObj = window.evolve.actions.tech[techKey];
-            if (actionObj && typeof actionObj.action === 'function') {
-                const success = actionObj.action();
-                if (success) {
-                    console.log(`[MAD Companion] Direct purchased technology: ${techKey}`);
+        // Try to queue/buy any that are affordable
+        for (const tech of availableTechs) {
+            const techKey = tech.key;
+            if (checkTechAffordable(techKey)) {
+                if (global.r_queue && global.r_queue.display) {
+                    const isQueued = global.r_queue.queue && global.r_queue.queue.some(q => q === techKey);
+                    if (!isQueued) {
+                        global.r_queue.queue.push(techKey);
+                        console.log(`[MAD Companion] Injected ${techKey} into research queue.`);
+                        const rqVm = document.getElementById('resQueue')?.__vue__;
+                        if (rqVm && typeof rqVm.$forceUpdate === 'function') rqVm.$forceUpdate();
+                    }
+                } else {
+                    const actionObj = window.evolve.actions.tech[techKey];
+                    if (actionObj && typeof actionObj.action === 'function') {
+                        const success = actionObj.action();
+                        if (success) {
+                            console.log(`[MAD Companion] Direct purchased technology: ${techKey}`);
+                            break; // only buy one per loop iteration
+                        }
+                    }
                 }
             }
         }
