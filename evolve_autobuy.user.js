@@ -815,7 +815,7 @@
                         }
                     }
                     tempVirtualAmounts[res] = (tempVirtualAmounts[res] || 0) - costVal;
-                    if (entry.originalIndex < entry.horizon) {
+                    if (firstValidIndex === -1 && entry.originalIndex < entry.horizon) {
                         currentReservedPrecursors[res] = (currentReservedPrecursors[res] || 0) + costVal;
                     }
                 }
@@ -827,6 +827,9 @@
             }
 
             if (itemFailed) {
+                if (firstValidIndex === -1) {
+                    currentReservedPrecursors = {}; // Clear failed candidate reservations
+                }
                 continue;
             }
 
