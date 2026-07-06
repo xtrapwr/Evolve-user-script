@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.1
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -128,17 +128,17 @@
     };
 
     const MAD_TECH_PATH = [
+        { key: 'black_powder', id: 'tech-black_powder' },
+        { key: 'dynamite', id: 'tech-dynamite' },
         { key: 'mad_science', id: 'tech-mad_science' },
         { key: 'electricity', id: 'tech-electricity' },
         { key: 'industrialization', id: 'tech-industrialization' },
+        { key: 'anfo', id: 'tech-anfo' },
         { key: 'electronics', id: 'tech-electronics' },
         { key: 'uranium', id: 'tech-uranium' },
         { key: 'fission', id: 'tech-fission' },
         { key: 'arpa', id: 'tech-arpa' },
         { key: 'rocketry', id: 'tech-rocketry' },
-        { key: 'black_powder', id: 'tech-black_powder' },
-        { key: 'dynamite', id: 'tech-dynamite' },
-        { key: 'anfo', id: 'tech-anfo' },
         { key: 'mad', id: 'tech-mad' }
     ];
 
@@ -747,7 +747,7 @@
         panel.innerHTML = `
             ${challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v1.3.0</span>
+                <span>MAD Farm Companion v1.3.1</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
@@ -822,7 +822,7 @@
         
         panel.innerHTML = `
             <div class="mad-res-header">
-                <span>MAD Research Guide v1.3.0</span>
+                <span>MAD Research Guide v1.3.1</span>
                 <label style="cursor:pointer; font-weight:normal; font-size:0.8rem;">
                     <input type="checkbox" id="mad-auto-research-chk" ${settings.autoResearch ? 'checked' : ''}> Auto-Research (Hybrid)
                 </label>
