@@ -839,6 +839,72 @@
         });
     }
 
+    function checkTechAffordable(techKey) {
+        if (!window.evolve || !window.evolve.actions || !window.evolve.actions.tech) return false;
+        const action = window.evolve.actions.tech[techKey];
+        if (!action) return false;
+        
+        const adjustCostsFn = window.evolve.adjustCosts || window.adjustCosts;
+        if (typeof adjustCostsFn !== 'function') return false;
+        
+        const costs = adjustCostsFn(action);
+        const global = getRealGlobal();
+        if (!global || !global.resource) return false;
+        
+        for (const res in costs) {
+            if (costs.hasOwnProperty(res)) {
+                const costVal = costs[res]();
+                if (global.resource[res] && global.resource[res].amount < costVal) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function runAutoResearch() {
+        if (!settings.autoResearch) return;
+        const global = getRealGlobal();
+        if (!global || !window.evolve) return;
+        
+        // Find next target tech
+        let nextTech = null;
+        for (let i = 0; i < MAD_TECH_PATH.length; i++) {
+            if (!isTechResearched(MAD_TECH_PATH[i].key)) {
+                nextTech = MAD_TECH_PATH[i];
+                break;
+            }
+        }
+        if (!nextTech) return;
+        
+        const techKey = nextTech.key;
+        
+        // Check if the DOM button is present and affordable
+        const element = document.getElementById(nextTech.id);
+        if (!element) return; // not available for research yet
+        
+        if (!checkTechAffordable(techKey)) return;
+        
+        // Hybrid logic
+        if (global.r_queue && global.r_queue.display) {
+            const isQueued = global.r_queue.queue && global.r_queue.queue.some(q => q === techKey);
+            if (!isQueued) {
+                global.r_queue.queue.push(techKey);
+                console.log(`[MAD Companion] Injected ${techKey} into research queue.`);
+                const rqVm = document.getElementById('resQueue')?.__vue__;
+                if (rqVm && typeof rqVm.$forceUpdate === 'function') rqVm.$forceUpdate();
+            }
+        } else {
+            const actionObj = window.evolve.actions.tech[techKey];
+            if (actionObj && typeof actionObj.action === 'function') {
+                const success = actionObj.action();
+                if (success) {
+                    console.log(`[MAD Companion] Direct purchased technology: ${techKey}`);
+                }
+            }
+        }
+    }
+
     // ==========================================
     // 6. EVOLUTION & PLANET SCREEN GUIDES
     // ==========================================
@@ -1085,6 +1151,8 @@
         setInterval(() => {
             updateDashboard();
             applyGuides();
+            updateResearchPanel();
+            runAutoResearch();
         }, 500);
     }
 
