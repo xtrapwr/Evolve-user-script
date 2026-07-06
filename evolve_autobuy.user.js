@@ -744,15 +744,13 @@
                         let mult = getCraftMultiplier(res);
                         let craftActionsNeeded = Math.ceil(missingAmt / mult);
 
-                        // Precursor reservations for craftables are removed to avoid catch-22 blocking of excess craft logic.
-                        /*
-                        if (entry.originalIndex < entry.horizon) {
+                        // Precursor reservations for craftables are restored for the first valid item to protect ingredients from trade/spend.
+                        if (firstValidIndex === -1 && entry.originalIndex < entry.horizon) {
                             let recipe = craftCosts[res];
                             recipe.forEach(ingredient => {
                                 currentReservedPrecursors[ingredient.r] = (currentReservedPrecursors[ingredient.r] || 0) + (craftActionsNeeded * ingredient.a);
                             });
                         }
-                        */
                         
                         let recipe = craftCosts[res];
                         let maxAllowedActions = craftActionsNeeded;
