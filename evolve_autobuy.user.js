@@ -1067,7 +1067,7 @@
 
                 let allowedSpend;
                 if (reqRes === precursor) {
-                    allowedSpend = Math.min(0.75 * resObj.max, currentAmt - reservedAmt);
+                    allowedSpend = Math.min(0.25 * resObj.max, currentAmt - reservedAmt);
                 } else {
                     allowedSpend = currentAmt - reservedAmt;
                 }
