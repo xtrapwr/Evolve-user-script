@@ -1112,19 +1112,26 @@
         // 3. Research Guides Highlighting
         const mTab = document.getElementById('mTabResearch');
         if (mTab) {
-            let nextTech = null;
-            for (let i = 0; i < MAD_TECH_PATH.length; i++) {
-                if (!isTechResearched(MAD_TECH_PATH[i].key)) {
-                    nextTech = MAD_TECH_PATH[i];
-                    break;
+            let availableMilestones = [];
+            MAD_TECH_PATH.forEach(tech => {
+                if (!isTechResearched(tech.key)) {
+                    const el = document.getElementById(tech.id);
+                    if (el) {
+                        availableMilestones.push(tech);
+                    }
                 }
-            }
+            });
             
             let researchCssRules = [];
-            if (nextTech) {
-                const targetId = nextTech.id;
-                researchCssRules.push(`#${targetId} a.button, #${targetId} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
-                researchCssRules.push(`#tech .action:not(#${targetId}) a.button, #tech .action:not(#${targetId}) button { opacity: 0.4 !important; border: 1px dashed #7a7a7a !important; box-shadow: none !important; }`);
+            if (availableMilestones.length > 0) {
+                // Highlight all available milestone buttons in green
+                availableMilestones.forEach(tech => {
+                    researchCssRules.push(`#${tech.id} a.button, #${tech.id} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
+                });
+                
+                // Dim all other technologies in the main research list (#tech)
+                const milestoneSelector = availableMilestones.map(t => `#${t.id}`).join(', ');
+                researchCssRules.push(`#tech .action:not(${milestoneSelector}) a.button, #tech .action:not(${milestoneSelector}) button { opacity: 0.4 !important; border: 1px dashed #7a7a7a !important; box-shadow: none !important; }`);
             }
             
             let resStyleEl = document.getElementById('mad-companion-research-guides-style');
