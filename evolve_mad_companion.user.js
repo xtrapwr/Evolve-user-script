@@ -127,6 +127,40 @@
         celestial: ['angelic']
     };
 
+    const MAD_TECH_PATH = [
+        { key: 'mad_science', id: 'tech-mad_science' },
+        { key: 'electricity', id: 'tech-electricity' },
+        { key: 'industrialization', id: 'tech-industrialization' },
+        { key: 'electronics', id: 'tech-electronics' },
+        { key: 'uranium', id: 'tech-uranium' },
+        { key: 'fission', id: 'tech-fission' },
+        { key: 'arpa', id: 'tech-arpa' },
+        { key: 'rocketry', id: 'tech-rocketry' },
+        { key: 'black_powder', id: 'tech-black_powder' },
+        { key: 'dynamite', id: 'tech-dynamite' },
+        { key: 'anfo', id: 'tech-anfo' },
+        { key: 'mad', id: 'tech-mad' }
+    ];
+
+    function isTechResearched(techKey) {
+        const global = getRealGlobal();
+        if (!global || !global.tech) return false;
+        
+        if (techKey === 'black_powder') return global.tech.explosives >= 1;
+        if (techKey === 'dynamite') return global.tech.explosives >= 2;
+        if (techKey === 'anfo') return global.tech.explosives >= 3;
+        
+        if (techKey === 'mad_science') return global.tech.high_tech >= 1;
+        if (techKey === 'electricity') return global.tech.high_tech >= 2;
+        if (techKey === 'industrialization') return global.tech.high_tech >= 3;
+        if (techKey === 'electronics') return global.tech.high_tech >= 4;
+        if (techKey === 'fission') return global.tech.high_tech >= 5;
+        if (techKey === 'arpa') return global.tech.high_tech >= 6;
+        if (techKey === 'rocketry') return global.tech.high_tech >= 7;
+        
+        return !!global.tech[techKey];
+    }
+
     // Userscript Settings (LocalStorage cached)
     let settings = {
         collapsed: false,
