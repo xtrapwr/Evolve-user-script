@@ -89,6 +89,7 @@
     let currentQueueNeeds = {};
     let currentFirstNeededIndex = {};
     let currentPrimaryNeeds = {};
+    let currentReservedPrecursors = {};
     let currentAllowedCrafts = [];
     let currentCombinedQueue = [];
     let queueNeedsHistory = [];
@@ -633,6 +634,7 @@
     function getQueueNeeds() {
         if (!window.evolve || !window.evolve.global) return { needs: {}, firstNeededIndex: {}, primaryNeeds: {} };
         const global = window.evolve.global;
+        currentReservedPrecursors = {};
 
         const buildQueue = (global.queue && global.queue.queue && !global.queue.pause) ? global.queue.queue : [];
         const researchQueue = (global.r_queue && global.r_queue.queue && !global.r_queue.pause) ? global.r_queue.queue : [];
@@ -741,6 +743,13 @@
 
                         let mult = getCraftMultiplier(res);
                         let craftActionsNeeded = Math.ceil(missingAmt / mult);
+
+                        if (entry.originalIndex < entry.horizon) {
+                            let recipe = craftCosts[res];
+                            recipe.forEach(ingredient => {
+                                currentReservedPrecursors[ingredient.r] = (currentReservedPrecursors[ingredient.r] || 0) + (craftActionsNeeded * ingredient.a);
+                            });
+                        }
                         
                         let recipe = craftCosts[res];
                         let maxAllowedActions = craftActionsNeeded;
@@ -803,6 +812,9 @@
                         }
                     }
                     tempVirtualAmounts[res] = (tempVirtualAmounts[res] || 0) - costVal;
+                    if (entry.originalIndex < entry.horizon) {
+                        currentReservedPrecursors[res] = (currentReservedPrecursors[res] || 0) + costVal;
+                    }
                 }
 
                 if (itemFailed) {
