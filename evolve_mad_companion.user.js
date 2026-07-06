@@ -474,6 +474,22 @@
                 from { border-color: #ff3860; box-shadow: 0 0 2px #ff3860; }
                 to { border-color: rgba(255, 56, 96, 0.2); box-shadow: 0 0 10px rgba(255, 56, 96, 0.6); }
             }
+            #mad-companion-research-panel {
+                background-color: rgba(20, 20, 20, 0.9);
+                border: 1px solid rgba(128, 128, 128, 0.25);
+                border-radius: 4px;
+                padding: 8px 12px;
+                margin-bottom: 12px;
+                font-size: 0.85rem;
+            }
+            .mad-res-header {
+                display: flex;
+                justify-content: space-between;
+                font-weight: bold;
+                border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+                padding-bottom: 4px;
+                margin-bottom: 6px;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -761,6 +777,65 @@
             settings.collapsed = !settings.collapsed;
             saveSettings();
             updateDashboard();
+        });
+    }
+
+    function updateResearchPanel() {
+        const mTab = document.getElementById('mTabResearch');
+        if (!mTab) {
+            const existing = document.getElementById('mad-companion-research-panel');
+            if (existing) existing.remove();
+            return;
+        }
+        
+        const global = getRealGlobal();
+        if (!global) return;
+        
+        // Only show if current species has not done MAD yet
+        const biome = global.city.biome || 'Unknown';
+        const pendingOnPlanet = getUncompletedSpeciesOnPlanet(biome);
+        const species = global.race.species || 'Unknown';
+        if (!pendingOnPlanet.includes(species)) {
+            const existing = document.getElementById('mad-companion-research-panel');
+            if (existing) existing.remove();
+            return;
+        }
+        
+        let panel = document.getElementById('mad-companion-research-panel');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'mad-companion-research-panel';
+            mTab.insertBefore(panel, mTab.firstChild);
+        }
+        
+        // Build checklist HTML
+        let milestonesHTML = '';
+        MAD_TECH_PATH.forEach(tech => {
+            const done = isTechResearched(tech.key);
+            const label = tech.key.substring(0, 7).toUpperCase();
+            milestonesHTML += `
+                <span class="mad-badge ${done ? 'mad-complete' : 'mad-warn'}" style="margin: 2px; font-size: 0.7rem;">
+                    ${done ? '✓' : '○'} ${label}
+                </span>
+            `;
+        });
+        
+        panel.innerHTML = `
+            <div class="mad-res-header">
+                <span>MAD Research Guide v1.3.0</span>
+                <label style="cursor:pointer; font-weight:normal; font-size:0.8rem;">
+                    <input type="checkbox" id="mad-auto-research-chk" ${settings.autoResearch ? 'checked' : ''}> Auto-Research (Hybrid)
+                </label>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px;">
+                <strong>Path:</strong>
+                ${milestonesHTML}
+            </div>
+        `;
+        
+        document.getElementById('mad-auto-research-chk').addEventListener('change', (e) => {
+            settings.autoResearch = e.target.checked;
+            saveSettings();
         });
     }
 
