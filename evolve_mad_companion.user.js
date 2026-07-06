@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evolve MAD Farm Companion
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.1
 // @description  Automates and guides MAD farming runs in the Evil Universe to maximize idle time.
 // @author       Antigravity
 // @license      MIT
@@ -127,9 +127,44 @@
         celestial: ['angelic']
     };
 
+    const MAD_TECH_PATH = [
+        { key: 'black_powder', id: 'tech-black_powder' },
+        { key: 'dynamite', id: 'tech-dynamite' },
+        { key: 'mad_science', id: 'tech-mad_science' },
+        { key: 'electricity', id: 'tech-electricity' },
+        { key: 'industrialization', id: 'tech-industrialization' },
+        { key: 'anfo', id: 'tech-anfo' },
+        { key: 'electronics', id: 'tech-electronics' },
+        { key: 'uranium', id: 'tech-uranium' },
+        { key: 'fission', id: 'tech-fission' },
+        { key: 'arpa', id: 'tech-arpa' },
+        { key: 'rocketry', id: 'tech-rocketry' },
+        { key: 'mad', id: 'tech-mad' }
+    ];
+
+    function isTechResearched(techKey) {
+        const global = getRealGlobal();
+        if (!global || !global.tech) return false;
+        
+        if (techKey === 'black_powder') return global.tech.explosives >= 1;
+        if (techKey === 'dynamite') return global.tech.explosives >= 2;
+        if (techKey === 'anfo') return global.tech.explosives >= 3;
+        
+        if (techKey === 'mad_science') return global.tech.high_tech >= 1;
+        if (techKey === 'electricity') return global.tech.high_tech >= 2;
+        if (techKey === 'industrialization') return global.tech.high_tech >= 3;
+        if (techKey === 'electronics') return global.tech.high_tech >= 4;
+        if (techKey === 'fission') return global.tech.high_tech >= 5;
+        if (techKey === 'arpa') return global.tech.high_tech >= 6;
+        if (techKey === 'rocketry') return global.tech.high_tech >= 7;
+        
+        return !!global.tech[techKey];
+    }
+
     // Userscript Settings (LocalStorage cached)
     let settings = {
-        collapsed: false
+        collapsed: false,
+        autoResearch: false
     };
 
     function loadSettings() {
@@ -439,6 +474,22 @@
                 from { border-color: #ff3860; box-shadow: 0 0 2px #ff3860; }
                 to { border-color: rgba(255, 56, 96, 0.2); box-shadow: 0 0 10px rgba(255, 56, 96, 0.6); }
             }
+            #mad-companion-research-panel {
+                background-color: rgba(20, 20, 20, 0.9);
+                border: 1px solid rgba(128, 128, 128, 0.25);
+                border-radius: 4px;
+                padding: 8px 12px;
+                margin-bottom: 12px;
+                font-size: 0.85rem;
+            }
+            .mad-res-header {
+                display: flex;
+                justify-content: space-between;
+                font-weight: bold;
+                border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+                padding-bottom: 4px;
+                margin-bottom: 6px;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -696,7 +747,7 @@
         panel.innerHTML = `
             ${challengeReminderHTML}
             <div class="mad-title" id="mad-companion-toggle">
-                <span>MAD Farm Companion v1.2.0</span>
+                <span>MAD Farm Companion v1.3.1</span>
                 <span>${settings.collapsed ? '▼' : '▲'}</span>
             </div>
             <div id="mad-companion-body" style="display: ${settings.collapsed ? 'none' : 'block'};">
@@ -727,6 +778,132 @@
             saveSettings();
             updateDashboard();
         });
+    }
+
+    function updateResearchPanel() {
+        const mTab = document.getElementById('mTabResearch');
+        if (!mTab) {
+            const existing = document.getElementById('mad-companion-research-panel');
+            if (existing) existing.remove();
+            return;
+        }
+        
+        const global = getRealGlobal();
+        if (!global) return;
+        
+        // Only show if current species has not done MAD yet
+        const biome = global.city.biome || 'Unknown';
+        const pendingOnPlanet = getUncompletedSpeciesOnPlanet(biome);
+        const species = global.race.species || 'Unknown';
+        if (!pendingOnPlanet.includes(species)) {
+            const existing = document.getElementById('mad-companion-research-panel');
+            if (existing) existing.remove();
+            return;
+        }
+        
+        let panel = document.getElementById('mad-companion-research-panel');
+        if (!panel) {
+            panel = document.createElement('div');
+            panel.id = 'mad-companion-research-panel';
+            mTab.insertBefore(panel, mTab.firstChild);
+        }
+        
+        // Build checklist HTML
+        let milestonesHTML = '';
+        MAD_TECH_PATH.forEach(tech => {
+            const done = isTechResearched(tech.key);
+            const label = tech.key.substring(0, 7).toUpperCase();
+            milestonesHTML += `
+                <span class="mad-badge ${done ? 'mad-complete' : 'mad-warn'}" style="margin: 2px; font-size: 0.7rem;">
+                    ${done ? '✓' : '○'} ${label}
+                </span>
+            `;
+        });
+        
+        panel.innerHTML = `
+            <div class="mad-res-header">
+                <span>MAD Research Guide v1.3.1</span>
+                <label style="cursor:pointer; font-weight:normal; font-size:0.8rem;">
+                    <input type="checkbox" id="mad-auto-research-chk" ${settings.autoResearch ? 'checked' : ''}> Auto-Research (Hybrid)
+                </label>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; align-items:center; gap:5px;">
+                <strong>Path:</strong>
+                ${milestonesHTML}
+            </div>
+        `;
+        
+        document.getElementById('mad-auto-research-chk').addEventListener('change', (e) => {
+            settings.autoResearch = e.target.checked;
+            saveSettings();
+        });
+    }
+
+    function checkTechAffordable(techKey) {
+        if (!window.evolve || !window.evolve.actions || !window.evolve.actions.tech) return false;
+        const action = window.evolve.actions.tech[techKey];
+        if (!action) return false;
+        
+        const adjustCostsFn = window.evolve.adjustCosts || window.adjustCosts;
+        if (typeof adjustCostsFn !== 'function') return false;
+        
+        const costs = adjustCostsFn(action);
+        const global = getRealGlobal();
+        if (!global || !global.resource) return false;
+        
+        for (const res in costs) {
+            if (costs.hasOwnProperty(res)) {
+                const costVal = costs[res]();
+                if (global.resource[res] && global.resource[res].amount < costVal) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function runAutoResearch() {
+        if (!settings.autoResearch) return;
+        const global = getRealGlobal();
+        if (!global || !window.evolve) return;
+        
+        // Find all available uncompleted milestone technologies
+        let availableTechs = [];
+        MAD_TECH_PATH.forEach(tech => {
+            if (!isTechResearched(tech.key)) {
+                const element = document.getElementById(tech.id);
+                if (element) {
+                    availableTechs.push(tech);
+                }
+            }
+        });
+        
+        if (availableTechs.length === 0) return;
+        
+        // Try to queue/buy any that are affordable
+        for (const tech of availableTechs) {
+            const techKey = tech.key;
+            if (checkTechAffordable(techKey)) {
+                if (global.r_queue && global.r_queue.display) {
+                    const isQueued = global.r_queue.queue && global.r_queue.queue.some(q => q === techKey);
+                    if (!isQueued) {
+                        global.r_queue.queue.push(techKey);
+                        console.log(`[MAD Companion] Injected ${techKey} into research queue.`);
+                        const rqVm = document.getElementById('resQueue')?.__vue__;
+                        if (rqVm && typeof rqVm.$forceUpdate === 'function') rqVm.$forceUpdate();
+                    }
+                } else {
+                    const actionObj = window.evolve.actions.tech[techKey];
+                    if (actionObj && typeof actionObj.action === 'function') {
+                        const success = actionObj.action();
+                        if (success) {
+                            console.log(`[MAD Companion] Direct purchased technology: ${techKey}`);
+                            break; // only buy one per loop iteration
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ==========================================
@@ -932,6 +1109,43 @@
                 card.style.opacity = '';
             });
         }
+
+        // 3. Research Guides Highlighting
+        const mTab = document.getElementById('mTabResearch');
+        if (mTab) {
+            let availableMilestones = [];
+            MAD_TECH_PATH.forEach(tech => {
+                if (!isTechResearched(tech.key)) {
+                    const el = document.getElementById(tech.id);
+                    if (el) {
+                        availableMilestones.push(tech);
+                    }
+                }
+            });
+            
+            let researchCssRules = [];
+            if (availableMilestones.length > 0) {
+                // Highlight all available milestone buttons in green
+                availableMilestones.forEach(tech => {
+                    researchCssRules.push(`#${tech.id} a.button, #${tech.id} button { border: 2px solid #3ec48c !important; box-shadow: 0 0 5px #3ec48c !important; opacity: 1.0 !important; }`);
+                });
+                
+                // Dim all other technologies in the main research list (#tech)
+                const milestoneSelector = availableMilestones.map(t => `#${t.id}`).join(', ');
+                researchCssRules.push(`#tech .action:not(${milestoneSelector}) a.button, #tech .action:not(${milestoneSelector}) button { opacity: 0.4 !important; border: 1px dashed #7a7a7a !important; box-shadow: none !important; }`);
+            }
+            
+            let resStyleEl = document.getElementById('mad-companion-research-guides-style');
+            if (!resStyleEl) {
+                resStyleEl = document.createElement('style');
+                resStyleEl.id = 'mad-companion-research-guides-style';
+                document.head.appendChild(resStyleEl);
+            }
+            resStyleEl.textContent = researchCssRules.join('\n');
+        } else {
+            const resStyleEl = document.getElementById('mad-companion-research-guides-style');
+            if (resStyleEl) resStyleEl.textContent = '';
+        }
     }
 
     // ==========================================
@@ -945,6 +1159,8 @@
         setInterval(() => {
             updateDashboard();
             applyGuides();
+            updateResearchPanel();
+            runAutoResearch();
         }, 500);
     }
 
