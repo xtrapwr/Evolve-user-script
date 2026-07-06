@@ -1022,12 +1022,16 @@
             const resObj = global.resource[precursor];
             if (!resObj || !(resObj.max > 0)) return;
 
-            const isAtCapacity = resObj.amount >= 0.999 * resObj.max;
+            const isAtCapacity = resObj.amount >= 0.99 * resObj.max;
             if (!isAtCapacity) return;
 
             const craftRes = PRECURSOR_TO_CRAFTABLE[precursor];
             const recipe = craftCosts[craftRes];
             if (!recipe || !Array.isArray(recipe)) return;
+
+            // Ensure the precursor is actually an ingredient in the target recipe
+            const isPrecursorInRecipe = recipe.some(ing => ing.r === precursor);
+            if (!isPrecursorInRecipe) return;
 
             const resEl = document.getElementById('res' + craftRes);
             if (!resEl || !resEl.__vue__) return;
