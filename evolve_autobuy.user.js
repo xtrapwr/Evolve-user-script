@@ -991,6 +991,88 @@
         });
     }
 
+    function autoCraftPrecursorExcess() {
+        if (!window.evolve || !window.evolve.global) return;
+        const global = window.evolve.global;
+        if (!settings.enabled || global.settings.pause || global.race['no_craft']) return;
+
+        const craftCosts = window.evolve.craftCost || {};
+
+        const PRECURSOR_TO_CRAFTABLE = {
+            Lumber: 'Plywood',
+            Stone: 'Brick',
+            Cement: 'Brick',
+            Iron: 'Wrought_Iron',
+            Aluminium: 'Sheet_Metal',
+            Iridium: 'Mythril',
+            Alloy: 'Mythril',
+            Graphene: 'Aerogel',
+            Infernite: 'Aerogel',
+            Nano_Tube: 'Nanoweave',
+            Vitreloy: 'Nanoweave',
+            Adamantite: 'Scarletite',
+            Orichalcum: 'Scarletite',
+            Elerium: 'Quantium'
+        };
+
+        Object.keys(PRECURSOR_TO_CRAFTABLE).forEach(precursor => {
+            const resObj = global.resource[precursor];
+            if (!resObj || !(resObj.max > 0)) return;
+
+            const isAtCapacity = resObj.amount >= 0.999 * resObj.max;
+            if (!isAtCapacity) return;
+
+            const craftRes = PRECURSOR_TO_CRAFTABLE[precursor];
+            const recipe = craftCosts[craftRes];
+            if (!recipe || !Array.isArray(recipe)) return;
+
+            const resEl = document.getElementById('res' + craftRes);
+            if (!resEl || !resEl.__vue__) return;
+
+            // Determine maximum craft actions based on recipe spending limits
+            let maxActions = Infinity;
+
+            for (let ingredient of recipe) {
+                const reqRes = ingredient.r;
+                const reqAmt = ingredient.a;
+                const currentAmt = global.resource[reqRes] ? global.resource[reqRes].amount : 0;
+                const reservedAmt = currentReservedPrecursors[reqRes] || 0;
+
+                let allowedSpend;
+                if (reqRes === precursor) {
+                    // Spend up to 75% of precursor capacity, protected by queue requirement
+                    allowedSpend = Math.min(0.75 * resObj.max, currentAmt - reservedAmt);
+                } else {
+                    // Protect enqueued requirements for secondary precursors
+                    allowedSpend = currentAmt - reservedAmt;
+                }
+
+                if (allowedSpend <= 0) {
+                    maxActions = 0;
+                    break;
+                }
+
+                const actionsForIngredient = Math.floor(allowedSpend / reqAmt);
+                maxActions = Math.min(maxActions, actionsForIngredient);
+            }
+
+            if (maxActions > 0) {
+                let origMKeysVal = global.settings.mKeys;
+                try {
+                    global.settings.mKeys = false;
+                    logDebug(`    Executing excess precursor craft for ${craftRes}: actions = ${maxActions}`);
+                    resEl.__vue__.craft(craftRes, maxActions);
+                    let produced = maxActions * getCraftMultiplier(craftRes);
+                    console.log(`[Evolve Auto-Buy] Auto-crafted ${produced.toFixed(0)} ${craftRes} from excess precursor ${precursor}.`);
+                } catch (e) {
+                    console.error(`[Evolve Auto-Buy] Error crafting excess precursor ${craftRes}:`, e);
+                } finally {
+                    global.settings.mKeys = origMKeysVal;
+                }
+            }
+        });
+    }
+
     function getActionById(bId) {
         if (actionByIdCache[bId]) {
             return actionByIdCache[bId];
@@ -3046,6 +3128,7 @@
                 // Still run queue helpers and trade route management
                 try {
                     autoCraftForQueue(moneyTarget);
+                    autoCraftPrecursorExcess();
                 } catch (e) {
                     console.error("[Evolve Auto-Buy] Error performing auto-crafting:", e);
                 }
@@ -3076,6 +3159,7 @@
         // 2. Perform auto-crafting for the queue if needed
         try {
             autoCraftForQueue(nextItem);
+            autoCraftPrecursorExcess();
         } catch (e) {
             console.error("[Evolve Auto-Buy] Error performing auto-crafting:", e);
         }
